@@ -12,29 +12,48 @@ def extract_items_from_pdf(file):
             if text:
                 lines.extend(text.split('\n'))
 
-    region = "California"  # Hardcoded based on your spec
+    region = "California"
     brand = None
     results = []
     i = 0
+
+    def is_brand_line(line):
+        return line.isupper() and not any(char.isdigit() for char in line) and len(line.split()) <= 5
+
+    def is_combo_line(line):
+        return "COMBO PACK" in line.upper() or "GIFT PACK" in line.upper() or "BOTTLES EACH" in line.upper()
 
     while i < len(lines):
         line = lines[i].strip()
 
         # Detect brand
-        if line.isupper() and not any(char.isdigit() for char in line):
+        if is_brand_line(line):
             brand = line
             i += 1
             continue
 
-        # Match main wine line with Item#, Vintage, BPC/Size, Case, Bottle Price
-        match = re.match(r"(\d{5})\s+(\d{4}|NV)\s+(\d+)\s*/\s*(\d+[\s\w]*)\s+(\d+\.\d{2})(?:\s+(\d+\.\d{2}))?", line)
+        # Skip combo packs
+        if is_combo_line(line):
+            i += 1
+            continue
+
+        # Match main product line
+        match = re.match(r"(\d{5})\s+(\d{4}|NV)\s+(\d+)\s*/\s*(\d+[\w\s]*)\s+(\d+\.\d{2})(?:\s+(\d+\.\d{2}))?", line)
         if match:
+            # Find the real product name (look backwards until non-empty non-award line)
+            pname = ""
+            for k in range(i-1, max(i-6, -1), -1):
+                prev = lines[k].strip()
+                if prev and not any(x in prev.upper() for x in ["RATED", "AWARD", "CHALLENGE", "GOLD", "SILVER", "PLATINUM", "DOUBLE"]):
+                    pname = prev
+                    break
+
             item = {
                 "Region": region,
                 "Brand": brand,
                 "Item#": match.group(1),
                 "Vintage": match.group(2),
-                "Product Name": lines[i-1].strip(),  # assume previous line is the wine name
+                "Product Name": pname,
                 "Bottles per Case": match.group(3),
                 "Bottle Size": match.group(4),
                 "Case Price": match.group(5),
@@ -42,7 +61,6 @@ def extract_items_from_pdf(file):
                 "Discounts": ""
             }
 
-            # Collect discount lines
             discount_lines = []
             j = i + 1
             while j < len(lines):
@@ -76,7 +94,6 @@ if uploaded_file:
     st.subheader("Preview of Extracted Data")
     st.dataframe(df)
 
-    # Excel export
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='WineData')
