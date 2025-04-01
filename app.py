@@ -17,7 +17,7 @@ def extract_items_from_pdf(file):
     results = []
     current_region = None
     current_brand = None
-    last_valid_product_name = None
+    last_known_product_name = ""
 
     doc = fitz.open(stream=file, filetype="pdf")
     for page in doc:
@@ -38,7 +38,7 @@ def extract_items_from_pdf(file):
         def get_line_type(text, fonts):
             if not text or any(p in text for p in FOOTER_PATTERNS):
                 return "skip"
-            if text == "NEW":
+            if text.strip().upper() == "NEW":
                 return "skip"
             if REGION_FONT_SIZE in fonts:
                 return "region"
@@ -50,7 +50,7 @@ def extract_items_from_pdf(file):
                 return "vintage"
             if re.fullmatch(r"\d+\s*/\s*\d+", text):
                 return "size"
-            if re.fullmatch(r"\d+\.\d{2}(\s+\d+\.\d{2})?", text):
+            if re.fullmatch(r"\d+\.\d{2}", text):
                 return "price"
             if re.match(r"\$\d+\.\d{2} on \d+cs", text):
                 return "discount"
@@ -70,62 +70,71 @@ def extract_items_from_pdf(file):
                 i += 1
                 continue
             elif line_type == "item_id":
-                try:
-                    item_id = text.strip()
-                    vintage = sorted_lines[i + 1][1].strip()
-                    size_parts = sorted_lines[i + 2][1].strip().split("/")
-                    bottles_per_case = size_parts[0].strip()
-                    bottle_size = size_parts[1].strip()
-                    price_line = sorted_lines[i + 3][1].strip().split()
-                    case_price = price_line[0]
-                    bottle_price = price_line[1] if len(price_line) > 1 else ""
+                item_id = text.strip()
+                vintage = ""
+                bottles_per_case = ""
+                bottle_size = ""
+                case_price = ""
+                bottle_price = ""
+                discounts = []
 
-                    discounts = []
-                    j = i + 4
-                    while j < len(sorted_lines):
-                        d_text = sorted_lines[j][1].strip()
-                        if get_line_type(d_text, []) == "discount":
-                            discounts.append(d_text)
-                            j += 1
-                        else:
-                            break
+                # Gather product name from lines ABOVE only
+                pname_lines = []
+                for k in range(i - 1, max(i - 10, -1), -1):
+                    pt = sorted_lines[k][1].strip()
+                    pf = sorted_lines[k][2]
+                    if pt.upper() == "NEW" or "COMBINE" in pt.upper():
+                        continue
+                    if get_line_type(pt, pf) in ["item_id", "vintage", "size", "price", "discount", "skip"]:
+                        break
+                    pname_lines.insert(0, pt)
+                pname = " ".join(pname_lines).strip()
+                if pname:
+                    last_known_product_name = pname
+                else:
+                    pname = last_known_product_name
 
-                    # Collect name from lines above item_id
-                    pname_lines = []
-                    for k in range(i - 1, max(i - 10, -1), -1):
-                        prev_text = sorted_lines[k][1].strip()
-                        prev_fonts = sorted_lines[k][2]
-                        if prev_text.strip().upper() == "NEW":
-                            continue
-                        if get_line_type(prev_text, prev_fonts) in ["item_id", "vintage", "size", "price", "discount", "skip"]:
-                            break
-                        pname_lines.insert(0, prev_text)
-                    pname = " ".join(pname_lines).strip()
-                    if not pname:
-                        pname = last_valid_product_name or "[MISSING NAME]"
-                        inferred = True
-                    else:
-                        last_valid_product_name = pname
-                        inferred = False
+                # Scan downward for fields tied to this item
+                j = i + 1
+                while j < len(sorted_lines):
+                    t = sorted_lines[j][1].strip()
+                    f = sorted_lines[j][2]
+                    t_type = get_line_type(t, f)
 
-                    item = {
-                        "Region": current_region or "[UNKNOWN REGION]",
-                        "Brand": current_brand or "[UNKNOWN BRAND]",
-                        "Item#": item_id,
-                        "Vintage": vintage,
-                        "Product Name": pname,
-                        "Bottles per Case": bottles_per_case,
-                        "Bottle Size": bottle_size,
-                        "Case Price": case_price,
-                        "Bottle Price": bottle_price,
-                        "Discounts": "; ".join(discounts),
-                        "Name Inferred": "Yes" if inferred else "No"
-                    }
-                    results.append(item)
-                    i = j
-                except Exception as e:
-                    i += 1
-                    continue
+                    if t_type == "vintage" and not vintage:
+                        vintage = t
+                    elif t_type == "size" and not bottles_per_case:
+                        parts = t.split("/")
+                        if len(parts) == 2:
+                            bottles_per_case = parts[0].strip()
+                            bottle_size = parts[1].strip()
+                    elif t_type == "price" and not case_price:
+                        prices = t.split()
+                        case_price = prices[0]
+                        bottle_price = prices[1] if len(prices) > 1 else ""
+                        if bottles_per_case == "1":
+                            bottle_price = case_price  # fallback for 1/bottle case
+                    elif t_type == "discount":
+                        if "$" in t and "on" in t:
+                            discounts.append(t)
+                    elif t_type == "item_id":
+                        break
+                    j += 1
+
+                item = {
+                    "Region": current_region or "[UNKNOWN REGION]",
+                    "Brand": current_brand or "[UNKNOWN BRAND]",
+                    "Item#": item_id,
+                    "Vintage": vintage,
+                    "Product Name": pname or "[MISSING NAME]",
+                    "Bottles per Case": bottles_per_case,
+                    "Bottle Size": bottle_size,
+                    "Case Price": case_price,
+                    "Bottle Price": bottle_price,
+                    "Discounts": "; ".join(discounts),
+                }
+                results.append(item)
+                i = j
             else:
                 i += 1
 
