@@ -4,8 +4,8 @@ import pandas as pd
 import re
 from io import BytesIO
 
-FONT_REGION_THRESHOLD = 13
-FONT_BRAND_THRESHOLD = 11.5
+FONT_REGION_THRESHOLD = 11  # Lowered for better detection
+FONT_BRAND_THRESHOLD = 10
 
 FOOTER_PATTERNS = [
     "ROYAL WINE CORP", "BEVERAGE MEDIA", "ORDER DEPT", "WWW.ROYALWINES.COM",
@@ -122,6 +122,13 @@ def extract_items_from_pdf(file):
                     continue
                 else:
                     i += 1
+
+        # Debug preview if results are empty
+        if not results:
+            st.warning("No wine items were extracted.")
+            st.text("Sample of detected lines:")
+            for _, line, fonts in sorted_lines[:20]:
+                st.text(f"{line}  |  Fonts: {fonts}")
 
     return pd.DataFrame(results)
 
