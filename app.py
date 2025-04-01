@@ -17,17 +17,27 @@ def extract_items_from_pdf(file):
     results = []
     i = 0
 
-    def is_brand_line(line):
-        return line.isupper() and not any(char.isdigit() for char in line) and len(line.split()) <= 5
+    def is_brand_line(line, following_lines):
+        banned_phrases = ["ROYAL WINE CORP", "TEL:", "WWW.ROYALWINES.COM", "FAX:", "NASSAU", "BROOKLYN"]
+        if any(b in line.upper() for b in banned_phrases):
+            return False
+        if line.isupper() and not any(char.isdigit() for char in line) and len(line.split()) <= 5:
+            for lookahead in following_lines[:2]:
+                if re.search(r"\d{5}\s+(\d{4}|NV)\s+\d+\s*/\s*\d+", lookahead):
+                    return True
+        return False
 
     def is_combo_line(line):
         return "COMBO PACK" in line.upper() or "GIFT PACK" in line.upper() or "BOTTLES EACH" in line.upper()
 
+    def split_multiple_items(line):
+        return re.findall(r"(\d{5}\s+(?:\d{4}|NV)\s+\d+\s*/\s*\d+\s+\d+\.\d{2}(?:\s+\d+\.\d{2})?)", line)
+
     while i < len(lines):
         line = lines[i].strip()
 
-        # Detect brand
-        if is_brand_line(line):
+        # Detect brand safely
+        if is_brand_line(line, lines[i+1:i+3]):
             brand = line
             i += 1
             continue
@@ -37,30 +47,38 @@ def extract_items_from_pdf(file):
             i += 1
             continue
 
-        # Match main product line
-        match = re.match(r"(\d{5})\s+(\d{4}|NV)\s+(\d+)\s*/\s*(\d+[\w\s]*)\s+(\d+\.\d{2})(?:\s+(\d+\.\d{2}))?", line)
-        if match:
-            # Find the real product name (look backwards until non-empty non-award line)
-            pname = ""
-            for k in range(i-1, max(i-6, -1), -1):
-                prev = lines[k].strip()
-                if prev and not any(x in prev.upper() for x in ["RATED", "AWARD", "CHALLENGE", "GOLD", "SILVER", "PLATINUM", "DOUBLE"]):
-                    pname = prev
-                    break
+        # Check for multiple item entries in one line
+        items_in_line = split_multiple_items(line)
+        for idx, item_str in enumerate(items_in_line):
+            match = re.match(r"(\d{5})\s+(\d{4}|NV)\s+(\d+)\s*/\s*(\d+)\s+(\d+\.\d{2})(?:\s+(\d+\.\d{2}))?", item_str)
+            if match:
+                # Find the real product name (only for first item on line)
+                pname = ""
+                if idx == 0:
+                    for k in range(i-1, max(i-6, -1), -1):
+                        prev = lines[k].strip()
+                        if prev and not any(x in prev.upper() for x in ["RATED", "AWARD", "CHALLENGE", "GOLD", "SILVER", "PLATINUM", "DOUBLE"]):
+                            if not is_brand_line(prev, lines[k+1:k+3]):
+                                pname = prev
+                                break
 
-            item = {
-                "Region": region,
-                "Brand": brand,
-                "Item#": match.group(1),
-                "Vintage": match.group(2),
-                "Product Name": pname,
-                "Bottles per Case": match.group(3),
-                "Bottle Size": match.group(4),
-                "Case Price": match.group(5),
-                "Bottle Price": match.group(6) if match.group(6) else "",
-                "Discounts": ""
-            }
+                item = {
+                    "Region": region,
+                    "Brand": brand,
+                    "Item#": match.group(1),
+                    "Vintage": match.group(2),
+                    "Product Name": pname,
+                    "Bottles per Case": match.group(3),
+                    "Bottle Size": match.group(4),
+                    "Case Price": match.group(5),
+                    "Bottle Price": match.group(6) if match.group(6) else "",
+                    "Discounts": ""
+                }
 
+                results.append(item)
+
+        # Only collect discounts if this line was a clean single-item line
+        if len(items_in_line) == 1:
             discount_lines = []
             j = i + 1
             while j < len(lines):
@@ -74,9 +92,7 @@ def extract_items_from_pdf(file):
                     break
 
             if discount_lines:
-                item["Discounts"] = "; ".join(discount_lines)
-
-            results.append(item)
+                results[-1]["Discounts"] = "; ".join(discount_lines)
             i = j
         else:
             i += 1
