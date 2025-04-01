@@ -21,8 +21,9 @@ def extract_items_from_pdf(file):
 
             sorted_lines = []
             for top in sorted(lines.keys()):
-                line = " ".join([w["text"] for w in sorted(lines[top], key=lambda x: x["x"])])
-                fonts = set((w["fontname"], int(float(w["size"]))) for w in lines[top])
+                safe_words = [w for w in lines[top] if "x" in w and "text" in w]
+                line = " ".join([w["text"] for w in sorted(safe_words, key=lambda x: x["x"])])
+                fonts = set((w["fontname"], int(float(w["size"]))) for w in safe_words if "fontname" in w and "size" in w)
                 sorted_lines.append((top, line.strip(), fonts))
 
             def get_line_type(line, fonts):
@@ -114,7 +115,7 @@ def extract_items_from_pdf(file):
                     continue
                 else:
                     i += 1
-        return pd.DataFrame(results)
+    return pd.DataFrame(results)
 
 st.title("Royal Wine PDF to Excel Extractor")
 
