@@ -15,6 +15,7 @@ def extract_items_from_pdf(file):
     results = []
     current_region = None
     current_brand = None
+    last_valid_product_name = None
 
     banned_headers = ["ROYAL WINE CORP", "TEL:", "FAX:", "WWW.ROYALWINES.COM", "NASSAU"]
 
@@ -47,14 +48,12 @@ def extract_items_from_pdf(file):
     while i < len(lines):
         line = lines[i].strip()
 
-        # Detect and set region
         if is_region_line(line):
             if current_brand != line:
                 current_region = line
             i += 1
             continue
 
-        # Detect and set brand
         if is_brand_line(line):
             if line != current_region:
                 current_brand = line
@@ -77,7 +76,13 @@ def extract_items_from_pdf(file):
                         continue
                     pname_lines.insert(0, prev)
 
-                pname = " ".join(pname_lines).strip() or "[MISSING NAME]"
+                pname = " ".join(pname_lines).strip()
+                inferred = False
+                if not pname:
+                    pname = last_valid_product_name or "[MISSING NAME]"
+                    inferred = True
+                else:
+                    last_valid_product_name = pname
 
                 item = {
                     "Region": current_region or "[UNKNOWN REGION]",
@@ -89,7 +94,8 @@ def extract_items_from_pdf(file):
                     "Bottle Size": item_match.group(4),
                     "Case Price": item_match.group(5),
                     "Bottle Price": item_match.group(6) if item_match.group(6) else "",
-                    "Discounts": ""
+                    "Discounts": "",
+                    "Name Inferred": "Yes" if inferred else "No"
                 }
 
                 discount_lines = []
