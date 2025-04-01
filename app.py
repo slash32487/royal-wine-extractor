@@ -16,16 +16,22 @@ def extract_items_from_pdf(file):
     current_region = None
     current_brand = None
 
-    def is_region_line(line):
-        return line.isupper() and len(line.split()) <= 3 and not re.search(r'[\d\$/]', line)
+    banned_headers = ["ROYAL WINE CORP", "TEL:", "FAX:", "WWW.ROYALWINES.COM", "NASSAU"]
 
-    def is_brand_line(line):
-        banned = ["ROYAL WINE CORP", "TEL:", "WWW.ROYALWINES.COM", "FAX:", "NASSAU", "BROOKLYN"]
+    def is_region_line(line):
         return (
             line.isupper()
-            and not any(b in line for b in banned)
-            and not re.search(r'[\d\$/]', line)
-            and 1 <= len(line.split()) <= 5
+            and len(line.split()) <= 4
+            and not re.search(r'\d|\$', line)
+            and not any(x in line.upper() for x in banned_headers)
+        )
+
+    def is_brand_line(line):
+        return (
+            line.isupper()
+            and len(line.split()) <= 6
+            and not re.search(r'\d|\$', line)
+            and not any(x in line.upper() for x in banned_headers)
         )
 
     def is_combo_line(line):
@@ -41,33 +47,33 @@ def extract_items_from_pdf(file):
     while i < len(lines):
         line = lines[i].strip()
 
-        # Set region if it's likely a region header
+        # Detect and set region
         if is_region_line(line):
-            current_region = line
+            if current_brand != line:
+                current_region = line
             i += 1
             continue
 
-        # Set brand if it's valid
+        # Detect and set brand
         if is_brand_line(line):
-            current_brand = line
+            if line != current_region:
+                current_brand = line
             i += 1
             continue
 
-        # Skip combo/gift lines
         if is_combo_line(line):
             i += 1
             continue
 
-        # Handle item lines
         if is_item_line(line):
             item_match = re.match(r"(\d{5})\s+(\d{4}|NV)\s+(\d+)\s*/\s*(\d+)\s+(\d+\.\d{2})(?:\s+(\d+\.\d{2}))?", line)
             if item_match:
                 pname_lines = []
                 for k in range(i - 1, max(i - 8, -1), -1):
                     prev = lines[k].strip()
-                    if is_brand_line(prev) or is_combo_line(prev):
+                    if is_combo_line(prev) or is_item_line(prev):
                         break
-                    if re.search(r'[\d]', prev):
+                    if any(bad in prev.upper() for bad in banned_headers):
                         continue
                     pname_lines.insert(0, prev)
 
@@ -86,7 +92,6 @@ def extract_items_from_pdf(file):
                     "Discounts": ""
                 }
 
-                # Gather discounts
                 discount_lines = []
                 j = i + 1
                 while j < len(lines):
