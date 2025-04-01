@@ -17,18 +17,21 @@ def extract_items_from_pdf(file):
     results = []
     i = 0
 
-    def is_brand_line(line, following_lines):
+    def is_brand_line(line):
         banned_phrases = ["ROYAL WINE CORP", "TEL:", "WWW.ROYALWINES.COM", "FAX:", "NASSAU", "BROOKLYN"]
         if any(b in line.upper() for b in banned_phrases):
             return False
-        if line.isupper() and not any(char.isdigit() for char in line) and len(line.split()) <= 5:
-            for lookahead in following_lines[:2]:
-                if re.search(r"\d{5}\s+(\d{4}|NV)\s+\d+\s*/\s*\d+", lookahead):
-                    return True
-        return False
+        if len(line.split()) > 7:
+            return False
+        if re.search(r'\d|\$|/', line):
+            return False
+        return True
 
     def is_combo_line(line):
-        return "COMBO PACK" in line.upper() or "GIFT PACK" in line.upper() or "BOTTLES EACH" in line.upper()
+        return any(x in line.upper() for x in ["COMBO PACK", "GIFT PACK", "BOTTLES EACH"])
+
+    def is_award_line(line):
+        return any(x in line.upper() for x in ["AWARD", "POINTS", "RATED", "GOLD", "SILVER", "BRONZE", "PLATINUM"])
 
     def split_multiple_items(line):
         return re.findall(r"(\d{5}\s+(?:\d{4}|NV)\s+\d+\s*/\s*\d+\s+\d+\.\d{2}(?:\s+\d+\.\d{2})?)", line)
@@ -36,8 +39,8 @@ def extract_items_from_pdf(file):
     while i < len(lines):
         line = lines[i].strip()
 
-        if is_brand_line(line, lines[i+1:i+3]):
-            brand = line
+        if is_brand_line(line):
+            brand = line.strip()
             i += 1
             continue
 
@@ -50,15 +53,19 @@ def extract_items_from_pdf(file):
             match = re.match(r"(\d{5})\s+(\d{4}|NV)\s+(\d+)\s*/\s*(\d+)\s+(\d+\.\d{2})(?:\s+(\d+\.\d{2}))?", item_str)
             if match:
                 pname_lines = []
-                if idx == 0:
-                    for k in range(i-1, max(i-6, -1), -1):
-                        prev = lines[k].strip()
-                        if prev and not any(x in prev.upper() for x in ["RATED", "AWARD", "CHALLENGE", "GOLD", "SILVER", "PLATINUM", "DOUBLE"]):
-                            if not is_brand_line(prev, lines[k+1:k+3]):
-                                pname_lines.insert(0, prev)
-                            else:
-                                break
+                for k in range(i-1, max(i-6, -1), -1):
+                    prev = lines[k].strip()
+                    if not prev:
+                        continue
+                    if is_brand_line(prev) or is_combo_line(prev) or is_award_line(prev):
+                        break
+                    if re.search(r'[\d\$]', prev):
+                        continue
+                    pname_lines.insert(0, prev)
+
                 pname = " ".join(pname_lines).strip()
+                if not pname:
+                    pname = "[MISSING NAME]"
 
                 item = {
                     "Region": region,
@@ -75,11 +82,13 @@ def extract_items_from_pdf(file):
 
                 results.append(item)
 
-        if len(items_in_line) == 1:
+        if len(items_in_line) == 1 and results:
             discount_lines = []
             j = i + 1
             while j < len(lines):
                 dline = lines[j].strip()
+                if is_combo_line(dline):
+                    break
                 dmatch = re.match(r"\$(\d+\.\d{2}) on (\d+cs)\s+(\d+\.\d{2})\s+(\d+\.\d{2})", dline)
                 if dmatch:
                     discount_str = f"${dmatch.group(1)} on {dmatch.group(2)}: {dmatch.group(3)} / {dmatch.group(4)}"
