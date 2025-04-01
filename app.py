@@ -31,9 +31,6 @@ def extract_items_from_pdf(file):
     def is_combo_line(line):
         return any(x in line.upper() for x in ["COMBO PACK", "GIFT PACK", "BOTTLES EACH"])
 
-    def is_award_line(line):
-        return any(x in line.upper() for x in ["AWARD", "POINTS", "RATED", "GOLD", "SILVER", "PLATINUM"])
-
     def is_item_line(line):
         return re.match(r"\d{5}\s+(\d{4}|NV)\s+\d+\s*/\s*\d+\s+\d+\.\d{2}(\s+\d+\.\d{2})?", line)
 
@@ -66,11 +63,11 @@ def extract_items_from_pdf(file):
             item_match = re.match(r"(\d{5})\s+(\d{4}|NV)\s+(\d+)\s*/\s*(\d+)\s+(\d+\.\d{2})(?:\s+(\d+\.\d{2}))?", line)
             if item_match:
                 pname_lines = []
-                for k in range(i - 1, max(i - 6, -1), -1):
+                for k in range(i - 1, max(i - 8, -1), -1):
                     prev = lines[k].strip()
-                    if is_brand_line(prev) or is_combo_line(prev) or is_award_line(prev):
+                    if is_brand_line(prev) or is_combo_line(prev):
                         break
-                    if re.search(r'[\d\$]', prev):
+                    if re.search(r'[\d]', prev):
                         continue
                     pname_lines.insert(0, prev)
 
