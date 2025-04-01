@@ -9,9 +9,6 @@ FOOTER_PATTERNS = [
     "TEL:", "FAX:", "NASSAU"
 ]
 
-FONT_REGION_THRESHOLD = 13
-FONT_BRAND_THRESHOLD = 11
-
 def extract_items_from_pdf(file):
     results = []
     current_region = None
@@ -34,7 +31,7 @@ def extract_items_from_pdf(file):
             text = line.strip()
             if not text or any(p in text for p in FOOTER_PATTERNS):
                 return "skip"
-            if re.match(r"\d{5}\s+(\d{4}|NV)\s+\d+\s*/\s*\d+\s+\d+\.\d{2}(\s+\d+\.\d{2})?", text):
+            if re.match(r"\d{5}\s+(?:\d{4}|NV)\s+\d+\s*/\s*\d+\s+\d+\.\d{2}(?:\s+\d+\.\d{2})?", text):
                 return "item"
             if re.match(r"\$\d+\.\d{2} on \d+cs\s+\d+\.\d{2}\s+\d+\.\d{2}", text):
                 return "discount"
@@ -42,12 +39,6 @@ def extract_items_from_pdf(file):
                 return "skip"
             if any(x in text.upper() for x in ["COMBO PACK", "GIFT PACK", "BOTTLES EACH", "VARIATION"]):
                 return "combo"
-            if sizes:
-                max_size = max(sizes)
-                if max_size >= FONT_REGION_THRESHOLD and text.isupper():
-                    return "region"
-                if max_size >= FONT_BRAND_THRESHOLD:
-                    return "brand"
             return "product"
 
         i = 0
@@ -129,7 +120,19 @@ if uploaded_file:
         df = extract_items_from_pdf(uploaded_file)
 
     if df.empty:
-        st.warning("No items extracted. Please review PDF formatting.")
+        st.warning("No items extracted. Previewing first 20 lines for debug:")
+        doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+        for page in doc:
+            blocks = page.get_text("dict")["blocks"]
+            text_lines = []
+            for b in blocks:
+                for l in b.get("lines", []):
+                    line_text = " ".join([span["text"] for span in l["spans"] if span["text"].strip()])
+                    font_sizes = [span.get("size", 0) for span in l["spans"] if "size" in span]
+                    text_lines.append((l["bbox"][1], line_text.strip(), font_sizes))
+            for top, line, fonts in sorted(text_lines, key=lambda x: x[0])[:20]:
+                st.text(f"{line}  | Sizes: {fonts}")
+            break
     else:
         st.success("Extraction complete!")
         st.dataframe(df)
