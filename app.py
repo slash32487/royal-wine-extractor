@@ -131,7 +131,7 @@ if uploaded_file:
                     line_text = " ".join([span["text"] for span in l["spans"] if span["text"].strip()])
                     font_sizes = [span.get("size", 0) for span in l["spans"] if "size" in span]
                     text_lines.append((l["bbox"][1], line_text.strip(), font_sizes))
-            for top, line, fonts in sorted(text_lines, key=lambda x: x[0])[:20]:
+            for top, line, fonts in sorted(text_lines, key=lambda x: x[0])[:80]:
                 st.text(f"{line}  | Sizes: {fonts}")
             break
     else:
