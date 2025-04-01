@@ -18,6 +18,7 @@ def extract_items_from_pdf(file):
     last_valid_product_name = None
 
     banned_headers = ["ROYAL WINE CORP", "TEL:", "FAX:", "WWW.ROYALWINES.COM", "NASSAU"]
+    banned_name_tokens = ["COMBO PACK", "GIFT PACK", "BOTTLES EACH", "LEATHER GIFT", "NEW"]
 
     def is_region_line(line):
         return (
@@ -36,7 +37,7 @@ def extract_items_from_pdf(file):
         )
 
     def is_combo_line(line):
-        return any(x in line.upper() for x in ["COMBO PACK", "GIFT PACK", "BOTTLES EACH"])
+        return any(x in line.upper() for x in banned_name_tokens)
 
     def is_item_line(line):
         return re.match(r"\d{5}\s+(\d{4}|NV)\s+\d+\s*/\s*\d+\s+\d+\.\d{2}(\s+\d+\.\d{2})?", line)
@@ -57,6 +58,7 @@ def extract_items_from_pdf(file):
         if is_brand_line(line):
             if line != current_region:
                 current_brand = line
+                last_valid_product_name = None  # reset
             i += 1
             continue
 
@@ -65,14 +67,25 @@ def extract_items_from_pdf(file):
             continue
 
         if is_item_line(line):
+            skip_item = False
+            for offset in range(1, 4):
+                if i - offset >= 0 and is_combo_line(lines[i - offset]):
+                    skip_item = True
+                    break
+            if skip_item:
+                i += 1
+                continue
+
             item_match = re.match(r"(\d{5})\s+(\d{4}|NV)\s+(\d+)\s*/\s*(\d+)\s+(\d+\.\d{2})(?:\s+(\d+\.\d{2}))?", line)
             if item_match:
                 pname_lines = []
                 for k in range(i - 1, max(i - 8, -1), -1):
                     prev = lines[k].strip()
-                    if is_combo_line(prev) or is_item_line(prev):
+                    if is_item_line(prev) or is_combo_line(prev):
                         break
                     if any(bad in prev.upper() for bad in banned_headers):
+                        continue
+                    if prev.upper() == "NEW":
                         continue
                     pname_lines.insert(0, prev)
 
