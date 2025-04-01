@@ -100,9 +100,7 @@ def extract_items_from_pdf(file):
                         if get_line_type(prev_text, prev_fonts) in ["item_id", "vintage", "size", "price", "discount", "skip"]:
                             break
                         pname_lines.insert(0, prev_text)
-                    pname = " ".join(pname_lines).strip()                            break
-                        pname_lines.insert(0, prev_text)
-                    " ".join(pname_lines).strip()
+                    pname = " ".join(pname_lines).strip()
                     if not pname:
                         pname = last_valid_product_name or "[MISSING NAME]"
                         inferred = True
