@@ -4,6 +4,14 @@ import pandas as pd
 import re
 from io import BytesIO
 
+FONT_REGION_THRESHOLD = 13
+FONT_BRAND_THRESHOLD = 11.5
+
+FOOTER_PATTERNS = [
+    "ROYAL WINE CORP", "BEVERAGE MEDIA", "ORDER DEPT", "WWW.ROYALWINES.COM",
+    "TEL:", "FAX:", "NASSAU"
+]
+
 def extract_items_from_pdf(file):
     with pdfplumber.open(file) as pdf:
         results = []
@@ -14,7 +22,6 @@ def extract_items_from_pdf(file):
         for page in pdf.pages:
             words = page.extract_words(use_text_flow=True, keep_blank_chars=False)
             lines = {}
-
             for w in words:
                 top = round(w["top"])
                 lines.setdefault(top, []).append(w)
@@ -23,29 +30,30 @@ def extract_items_from_pdf(file):
             for top in sorted(lines.keys()):
                 safe_words = [w for w in lines[top] if "x" in w and "text" in w]
                 line = " ".join([w["text"] for w in sorted(safe_words, key=lambda x: x["x"])])
-                fonts = set((w["fontname"], int(float(w["size"]))) for w in safe_words if "fontname" in w and "size" in w)
+                fonts = set((w.get("fontname", ""), float(w.get("size", 0))) for w in safe_words)
                 sorted_lines.append((top, line.strip(), fonts))
 
             def get_line_type(line, fonts):
                 text = line.strip()
-                if not text:
+                if not text or any(p in text for p in FOOTER_PATTERNS):
                     return "skip"
                 if re.match(r"\d{5}\s+(\d{4}|NV)\s+\d+\s*/\s*\d+\s+\d+\.\d{2}(\s+\d+\.\d{2})?", text):
                     return "item"
                 if re.match(r"\$\d+\.\d{2} on \d+cs\s+\d+\.\d{2}\s+\d+\.\d{2}", text):
                     return "discount"
-                if "NEW" == text.upper():
+                if text.upper() == "NEW":
                     return "skip"
                 if any(x in text.upper() for x in ["COMBO PACK", "GIFT PACK", "BOTTLES EACH", "VARIATION"]):
                     return "combo"
-                sizes = [f[1] for f in fonts]
-                if len(sizes) > 0:
-                    avg_size = sum(sizes) / len(sizes)
-                    if avg_size > 11:
-                        return "region" if text.isupper() else "brand"
+                sizes = [s for _, s in fonts if isinstance(s, (int, float))]
+                if sizes:
+                    max_size = max(sizes)
+                    if max_size >= FONT_REGION_THRESHOLD and text.isupper():
+                        return "region"
+                    if max_size >= FONT_BRAND_THRESHOLD:
+                        return "brand"
                 return "product"
 
-            buffer = []
             i = 0
             while i < len(sorted_lines):
                 _, line, fonts = sorted_lines[i]
@@ -60,7 +68,7 @@ def extract_items_from_pdf(file):
                     last_valid_product_name = None
                     i += 1
                     continue
-                elif ltype == "combo" or ltype == "skip":
+                elif ltype in ["combo", "skip"]:
                     i += 1
                     continue
                 elif ltype == "item":
@@ -68,8 +76,7 @@ def extract_items_from_pdf(file):
                     pname_lines = []
                     for j in range(i - 1, max(i - 8, -1), -1):
                         _, prev_line, prev_fonts = sorted_lines[j]
-                        prev_type = get_line_type(prev_line, prev_fonts)
-                        if prev_type in ["item", "combo", "skip"]:
+                        if get_line_type(prev_line, prev_fonts) in ["item", "combo", "skip"]:
                             break
                         pname_lines.insert(0, prev_line.strip())
 
@@ -115,6 +122,7 @@ def extract_items_from_pdf(file):
                     continue
                 else:
                     i += 1
+
     return pd.DataFrame(results)
 
 st.title("Royal Wine PDF to Excel Extractor")
