@@ -36,31 +36,29 @@ def extract_items_from_pdf(file):
     while i < len(lines):
         line = lines[i].strip()
 
-        # Detect brand safely
         if is_brand_line(line, lines[i+1:i+3]):
             brand = line
             i += 1
             continue
 
-        # Skip combo packs
         if is_combo_line(line):
             i += 1
             continue
 
-        # Check for multiple item entries in one line
         items_in_line = split_multiple_items(line)
         for idx, item_str in enumerate(items_in_line):
             match = re.match(r"(\d{5})\s+(\d{4}|NV)\s+(\d+)\s*/\s*(\d+)\s+(\d+\.\d{2})(?:\s+(\d+\.\d{2}))?", item_str)
             if match:
-                # Find the real product name (only for first item on line)
-                pname = ""
+                pname_lines = []
                 if idx == 0:
                     for k in range(i-1, max(i-6, -1), -1):
                         prev = lines[k].strip()
                         if prev and not any(x in prev.upper() for x in ["RATED", "AWARD", "CHALLENGE", "GOLD", "SILVER", "PLATINUM", "DOUBLE"]):
                             if not is_brand_line(prev, lines[k+1:k+3]):
-                                pname = prev
+                                pname_lines.insert(0, prev)
+                            else:
                                 break
+                pname = " ".join(pname_lines).strip()
 
                 item = {
                     "Region": region,
@@ -77,7 +75,6 @@ def extract_items_from_pdf(file):
 
                 results.append(item)
 
-        # Only collect discounts if this line was a clean single-item line
         if len(items_in_line) == 1:
             discount_lines = []
             j = i + 1
