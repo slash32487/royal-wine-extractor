@@ -15,7 +15,7 @@ def extract_items_from_pdf(file):
     current_brand = None
     last_valid_product_name = None
 
-    doc = fitz.open(stream=file.read(), filetype="pdf")
+    doc = fitz.open(stream=file, filetype="pdf")
     for page in doc:
         blocks = page.get_text("dict")["blocks"]
         text_lines = []
@@ -116,12 +116,13 @@ st.title("Royal Wine PDF to Excel Extractor")
 
 uploaded_file = st.file_uploader("Upload Royal Wine PDF", type="pdf")
 if uploaded_file:
+    pdf_bytes = uploaded_file.read()
     with st.spinner("Analyzing and Extracting using PyMuPDF..."):
-        df = extract_items_from_pdf(uploaded_file)
+        df = extract_items_from_pdf(BytesIO(pdf_bytes))
 
     if df.empty:
         st.warning("No items extracted. Previewing first 20 lines for debug:")
-        doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+        doc = fitz.open(stream=BytesIO(pdf_bytes), filetype="pdf")
         for page in doc:
             blocks = page.get_text("dict")["blocks"]
             text_lines = []
