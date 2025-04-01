@@ -91,6 +91,7 @@ def extract_items_from_pdf(file):
                             break
 
                     # Collect name from lines above item_id
+                    pname_lines = []
                     for k in range(i - 1, max(i - 10, -1), -1):
                         prev_text = sorted_lines[k][1].strip()
                         prev_fonts = sorted_lines[k][2]
@@ -98,6 +99,8 @@ def extract_items_from_pdf(file):
                             continue
                         if get_line_type(prev_text, prev_fonts) in ["item_id", "vintage", "size", "price", "discount", "skip"]:
                             break
+                        pname_lines.insert(0, prev_text)
+                    pname = " ".join(pname_lines).strip()                            break
                         pname_lines.insert(0, prev_text)
                     " ".join(pname_lines).strip()
                     if not pname:
