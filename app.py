@@ -64,3 +64,34 @@ if uploaded_file:
                 item["Product Name"] = " ".join(pname)
 
                 # forward grab discounts
+                forward_lines = sorted([k for k in lines if k > y])
+                for fy in forward_lines[:3]:
+                    ft = " ".join([w[1] for w in sorted(lines[fy], key=lambda x: x[0])])
+                    if re.match(r"\$\d+\.\d{2} on \d+cs", ft):
+                        item["Discounts"] += (ft + "; ")
+                item["Discounts"] = item["Discounts"].strip("; ")
+
+                # parse size
+                size_parts = item["Size"].split("/")
+                item["Bottles per Case"] = size_parts[0].strip()
+                item["Bottle Size"] = size_parts[1].strip()
+                del item["Size"]
+
+                data.append(item)
+
+    if not data:
+        st.warning("No data found.")
+    else:
+        df = pd.DataFrame(data)
+        st.success("Extraction complete!")
+        st.dataframe(df)
+
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="WineData")
+        st.download_button(
+            label="Download Excel File",
+            data=output.getvalue(),
+            file_name="royal_wine_data.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
