@@ -1,11 +1,4 @@
-pdfplumber
-PyMuPDF
-pdfminer.six
-pytesseract
-pillow
 streamlit
+PyMuPDF
 pandas
 openpyxl
-loguru
-regex
-python-dotenv
