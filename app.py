@@ -17,7 +17,7 @@ def extract_items_from_pdf(file):
     results = []
     current_region = None
     current_brand = None
-    last_known_product_name = ""
+    last_product_name = ""
 
     doc = fitz.open(stream=file, filetype="pdf")
     for page in doc:
@@ -69,6 +69,10 @@ def extract_items_from_pdf(file):
                 current_brand = text.strip()
                 i += 1
                 continue
+            elif line_type == "text":
+                last_product_name = text.strip()
+                i += 1
+                continue
             elif line_type == "item_id":
                 item_id = text.strip()
                 vintage = ""
@@ -77,24 +81,9 @@ def extract_items_from_pdf(file):
                 case_price = ""
                 bottle_price = ""
                 discounts = []
+                product_name = last_product_name
 
-                # Gather product name from lines ABOVE only
-                pname_lines = []
-                for k in range(i - 1, max(i - 10, -1), -1):
-                    pt = sorted_lines[k][1].strip()
-                    pf = sorted_lines[k][2]
-                    if pt.upper() == "NEW" or "COMBINE" in pt.upper():
-                        continue
-                    if get_line_type(pt, pf) in ["item_id", "vintage", "size", "price", "discount", "skip"]:
-                        break
-                    pname_lines.insert(0, pt)
-                pname = " ".join(pname_lines).strip()
-                if pname:
-                    last_known_product_name = pname
-                else:
-                    pname = last_known_product_name
-
-                # Scan downward for fields tied to this item
+                # Look ahead for next 5 lines
                 j = i + 1
                 while j < len(sorted_lines):
                     t = sorted_lines[j][1].strip()
@@ -111,29 +100,25 @@ def extract_items_from_pdf(file):
                     elif t_type == "price" and not case_price:
                         prices = t.split()
                         case_price = prices[0]
-                        bottle_price = prices[1] if len(prices) > 1 else ""
-                        if bottles_per_case == "1":
-                            bottle_price = case_price  # fallback for 1/bottle case
+                        bottle_price = prices[1] if len(prices) > 1 else case_price
                     elif t_type == "discount":
-                        if "$" in t and "on" in t:
-                            discounts.append(t)
+                        discounts.append(t)
                     elif t_type == "item_id":
                         break
                     j += 1
 
-                item = {
+                results.append({
                     "Region": current_region or "[UNKNOWN REGION]",
                     "Brand": current_brand or "[UNKNOWN BRAND]",
                     "Item#": item_id,
                     "Vintage": vintage,
-                    "Product Name": pname or "[MISSING NAME]",
+                    "Product Name": product_name,
                     "Bottles per Case": bottles_per_case,
                     "Bottle Size": bottle_size,
                     "Case Price": case_price,
                     "Bottle Price": bottle_price,
-                    "Discounts": "; ".join(discounts),
-                }
-                results.append(item)
+                    "Discounts": "; ".join(discounts)
+                })
                 i = j
             else:
                 i += 1
@@ -158,7 +143,7 @@ if uploaded_file:
             for b in blocks:
                 for l in b.get("lines", []):
                     spans = l.get("spans", [])
-                    text = " ".join([span["text"] for span in spans if span.get("text")])
+                    text = " ".join([span.get("text") for span in spans if span.get("text")])
                     font_sizes = list(set(span.get("size", 0) for span in spans))
                     top = l["bbox"][1]
                     lines.append((top, text.strip(), font_sizes))
