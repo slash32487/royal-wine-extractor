@@ -17,7 +17,7 @@ def extract_items_from_pdf(file):
     results = []
     current_region = None
     current_brand = None
-    last_product_name = ""
+    recent_lines = []
 
     doc = fitz.open(stream=file, filetype="pdf")
     for page in doc:
@@ -67,10 +67,11 @@ def extract_items_from_pdf(file):
                 continue
             elif line_type == "brand":
                 current_brand = text.strip()
+                recent_lines = []
                 i += 1
                 continue
-            elif line_type == "text":
-                last_product_name = text.strip()
+            elif line_type in ["text", "discount"]:
+                recent_lines.append(text.strip())
                 i += 1
                 continue
             elif line_type == "item_id":
@@ -81,7 +82,9 @@ def extract_items_from_pdf(file):
                 case_price = ""
                 bottle_price = ""
                 discounts = []
-                product_name = last_product_name
+                product_name_lines = [l for l in recent_lines if not l.startswith("$") and not l.startswith("NEW")]
+                product_name = " ".join(product_name_lines).strip()
+                recent_lines = []
 
                 j = i + 1
                 while j < len(sorted_lines):
