@@ -7,6 +7,26 @@ from collections import Counter
 
 st.title("Royal Wine PDF to Excel Extractor")
 
+# Predefined region and brand databases
+known_regions = {
+    "CALIFORNIA", "FRANCE", "BORDEAUX", "BOURGOGNE", "ISRAEL", "ITALY",
+    "NEW ZEALAND", "SOUTH AFRICA", "SPAIN", "CHAMPAGNE", "COTES DU RHONE",
+    "MARGAUX", "MEDOC", "PAUILLAC", "POMEROL", "SAUTERNES", "ST. EMILION",
+    "ST. ESTEPHE", "COTES DE PROVENCE"
+}
+
+known_brands = {
+    "HAGAFEN CELLARS", "HAJDU", "MARCIANO ESTATE", "PADIS VINEYARDS",
+    "SONOMA LOEB", "STOUDEMIRE", "WEINSTOCK", "WEINSTOCK - BY W", "WEINSTOCK-CELLAR SELECT",
+    "BOKOBSA SELECTIONS", "ROLLAN DE BY", "PHILIPPE LE HARDI", "DOMAINE TERNYNCK",
+    "ANOMIS", "B SAINT BEATRICE", "CHATEAU ROUBINE", "NADIV WINERY",
+    "DOMAINE DU CASTEL", "RAZIEL BY CASTEL", "YATIR WINERY", "CARMEL", "SHILOH",
+    "NETOFA", "BINNUN", "CHATEAU GOLAN", "MATAR", "NANA WINERY", "TEPERBERG",
+    "TULIP", "TZUBA", "VITKIN", "CANTINA GIULIANO", "LA REGOLA", "MASSERIA",
+    "TERRA DI SETA", "ESSA", "RIMAPERE", "CAPCANES", "RAMON CARDOVA",
+    "RASHI WINES", "BEN AMI", "KING DAVID"
+}
+
 uploaded_file = st.file_uploader("Upload Royal Wine PDF", type="pdf")
 
 if uploaded_file:
@@ -25,7 +45,7 @@ if uploaded_file:
     failed_parses = []
 
     for page in doc:
-        words = page.get_text("words")  # (x0, y0, x1, y1, word, block_no, line_no, word_no)
+        words = page.get_text("words")
         lines = {}
 
         for w in words:
@@ -45,12 +65,12 @@ if uploaded_file:
             if re.search(r"^\s*Item#", line, re.IGNORECASE):
                 continue
 
-            if re.fullmatch(r"[A-Z\s\-&]+", line) and len(line.split()) <= 5:
+            if line.strip() in known_regions:
                 current_region = line.strip()
                 all_regions.add(current_region)
                 continue
 
-            if re.match(r"^[A-Z][A-Za-z\s\-&]{2,}$", line) and len(line.split()) <= 5:
+            if line.strip() in known_brands:
                 current_brand = line.strip()
                 all_brands.add(current_brand)
                 continue
