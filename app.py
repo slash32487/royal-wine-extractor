@@ -5,7 +5,7 @@ import re
 from io import BytesIO
 from collections import Counter
 
-st.title("Royal Wine PDF to Excel Extractor")
+st.title("Royal Wine PDF to Excel Extractor (4-Column Split Mode)")
 
 # Predefined region and brand databases
 known_regions = {
@@ -27,7 +27,7 @@ known_brands = {
     "RASHI WINES", "BEN AMI", "KING DAVID"
 }
 
-uploaded_file = st.file_uploader("Upload Royal Wine PDF", type="pdf")
+uploaded_file = st.file_uploader("Upload 4-Column Split PDF", type="pdf")
 
 if uploaded_file:
     pdf_bytes = uploaded_file.read()
@@ -45,33 +45,25 @@ if uploaded_file:
     failed_parses = []
 
     for page in doc:
-        words = page.get_text("words")
-        lines = {}
+        text = page.get_text("text")
+        lines = text.split("\n")
 
-        for w in words:
-            y = round(w[1], 1)
-            text = w[4].strip()
-            if not text:
+        for idx, line in enumerate(lines):
+            debug_log.append({"Line": line})
+            line = line.strip()
+            if not line:
                 continue
-            lines.setdefault(y, []).append((w[0], text))
-
-        sorted_y = sorted(lines.keys())
-        for idx, y in enumerate(sorted_y):
-            line_words = sorted(lines[y], key=lambda x: x[0])
-            line = " ".join([w[1] for w in line_words])
-
-            debug_log.append({"Y": y, "Text": line})
 
             if re.search(r"^\s*Item#", line, re.IGNORECASE):
                 continue
 
-            if line.strip() in known_regions:
-                current_region = line.strip()
+            if line in known_regions:
+                current_region = line
                 all_regions.add(current_region)
                 continue
 
-            if line.strip() in known_brands:
-                current_brand = line.strip()
+            if line in known_brands:
+                current_brand = line
                 all_brands.add(current_brand)
                 continue
 
@@ -89,24 +81,27 @@ if uploaded_file:
                     "Discounts": ""
                 }
 
+                # Look backward for product name (up to 4 lines)
                 pname = []
-                for back_y in sorted_y[max(0, idx - 3):idx][::-1]:
-                    pt = " ".join([w[1] for w in sorted(lines[back_y], key=lambda x: x[0])])
-                    if not re.search(r"\d{5}|\d+ /\d+|\d+\.\d{2}|cs", pt):
-                        pname.insert(0, pt)
+                for back in range(max(0, idx - 4), idx):
+                    pt = lines[back].strip()
+                    if pt and not re.search(r"\d{5}|\d+ /\d+|\d+\.\d{2}|cs", pt):
+                        pname.append(pt)
                 item["Product Name"] = " ".join(pname)
 
-                for fy in sorted_y[idx + 1:idx + 4]:
-                    ft = " ".join([w[1] for w in sorted(lines[fy], key=lambda x: x[0])])
+                # Look ahead for discount(s)
+                for fwd in range(idx + 1, min(idx + 6, len(lines))):
+                    ft = lines[fwd].strip()
                     if re.match(r"\$\d+\.\d{2} on \d+cs", ft):
-                        item["Discounts"] += (ft + "; ")
+                        item["Discounts"] += ft + "; "
+
                 item["Discounts"] = item["Discounts"].strip("; ")
 
                 try:
                     size_parts = item["Size"].split("/")
                     item["Bottles per Case"] = size_parts[0].strip()
                     item["Bottle Size"] = size_parts[1].strip()
-                except Exception as e:
+                except:
                     item["Bottles per Case"] = ""
                     item["Bottle Size"] = ""
 
