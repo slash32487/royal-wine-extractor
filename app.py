@@ -3,151 +3,98 @@ import fitz  # PyMuPDF
 import pandas as pd
 import re
 from io import BytesIO
-from collections import Counter
+from collections import defaultdict
 
-st.title("Royal Wine PDF to Excel Extractor (4-Column Split Mode)")
+st.title("Royal Wine PDF to Excel Extractor (Full PDF Mode)")
 
-# Predefined region and brand databases
-known_regions = {
-    "CALIFORNIA", "FRANCE", "BORDEAUX", "BOURGOGNE", "ISRAEL", "ITALY",
-    "NEW ZEALAND", "SOUTH AFRICA", "SPAIN", "CHAMPAGNE", "COTES DU RHONE",
-    "MARGAUX", "MEDOC", "PAUILLAC", "POMEROL", "SAUTERNES", "ST. EMILION",
-    "ST. ESTEPHE", "COTES DE PROVENCE"
-}
+# Predefined patterns and data ranges
+valid_vintages = {str(y) for y in range(1990, 2026)}
+valid_case_sizes = {"1", "3", "6", "12", "24", "36", "48"}
 
-known_brands = {
-    "HAGAFEN CELLARS", "HAJDU", "MARCIANO ESTATE", "PADIS VINEYARDS",
-    "SONOMA LOEB", "STOUDEMIRE", "WEINSTOCK", "WEINSTOCK - BY W", "WEINSTOCK-CELLAR SELECT",
-    "BOKOBSA SELECTIONS", "ROLLAN DE BY", "PHILIPPE LE HARDI", "DOMAINE TERNYNCK",
-    "ANOMIS", "B SAINT BEATRICE", "CHATEAU ROUBINE", "NADIV WINERY",
-    "DOMAINE DU CASTEL", "RAZIEL BY CASTEL", "YATIR WINERY", "CARMEL", "SHILOH",
-    "NETOFA", "BINNUN", "CHATEAU GOLAN", "MATAR", "NANA WINERY", "TEPERBERG",
-    "TULIP", "TZUBA", "VITKIN", "CANTINA GIULIANO", "LA REGOLA", "MASSERIA",
-    "TERRA DI SETA", "ESSA", "RIMAPERE", "CAPCANES", "RAMON CARDOVA",
-    "RASHI WINES", "BEN AMI", "KING DAVID"
-}
+# These should be expanded as needed
+known_regions = {"CALIFORNIA", "FRANCE", "ISRAEL", "ITALY", "SPAIN", "SOUTH AFRICA"}
+known_brands = {"STOUDEMIRE", "WEINSTOCK", "HAGAFEN CELLARS", "PHILIPPE LE HARDI"}
 
-uploaded_file = st.file_uploader("Upload 4-Column Split PDF", type="pdf")
+uploaded_file = st.file_uploader("Upload Full Royal Wine PDF", type="pdf")
 
 if uploaded_file:
-    pdf_bytes = uploaded_file.read()
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-
+    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
     data = []
     debug_log = []
     current_region = None
     current_brand = None
+    temp = defaultdict(str)
 
-    all_regions = set()
-    all_brands = set()
-    item_count = 0
-    missing_data_rows = []
-    failed_parses = []
+    def save_entry():
+        if temp.get("Item#"):
+            data.append({
+                "Region": current_region,
+                "Brand": current_brand,
+                "Item#": temp["Item#"],
+                "Vintage": temp["Vintage"],
+                "Product Name": temp["Name"].strip(),
+                "Bottles per Case": temp["BPC"],
+                "Bottle Size": temp["BottleSize"],
+                "Case Price": temp["CasePrice"],
+                "Bottle Price": temp["BottlePrice"],
+                "Discounts": temp["Discounts"].strip("; ")
+            })
+            temp.clear()
 
     for page in doc:
-        text = page.get_text("text")
-        lines = text.split("\n")
+        words = page.get_text("words")
+        words.sort(key=lambda w: (round(w[1], 1), w[0]))
+        lines_by_y = defaultdict(list)
+        for w in words:
+            lines_by_y[round(w[1], 1)].append((w[0], w[4]))
 
-        for idx, line in enumerate(lines):
-            debug_log.append({"Line": line})
-            line = line.strip()
-            if not line:
+        for y in sorted(lines_by_y):
+            line = " ".join([w[1] for w in sorted(lines_by_y[y])]).strip()
+            debug_log.append({"Y": y, "Line": line})
+
+            if line.upper() in known_regions:
+                current_region = line.upper()
                 continue
-
-            if re.search(r"^\s*Item#", line, re.IGNORECASE):
+            if line.upper() in known_brands:
+                current_brand = line.upper()
                 continue
-
-            if line in known_regions:
-                current_region = line
-                all_regions.add(current_region)
+            if re.fullmatch(r"\d{5}", line):
+                save_entry()
+                temp["Item#"] = line
                 continue
-
-            if line in known_brands:
-                current_brand = line
-                all_brands.add(current_brand)
+            if line in valid_vintages:
+                temp["Vintage"] = line
                 continue
+            if re.match(rf"^({'|'.join(valid_case_sizes)}) /\d+[A-Z]*$", line):
+                bpc, size = line.split("/")
+                temp["BPC"] = bpc.strip()
+                temp["BottleSize"] = size.strip()
+                continue
+            if re.fullmatch(r"\d+\.\d{2} \d+\.\d{2}", line):
+                case_price, bottle_price = line.split()
+                temp["CasePrice"] = case_price
+                temp["BottlePrice"] = bottle_price
+                continue
+            if re.match(r"\$\d+\.\d{2} on \d+cs", line):
+                temp["Discounts"] += line + "; "
+                continue
+            temp["Name"] += line + " "
 
-            match = re.match(r"(\d{5})\s+(\d{4}|NV)?\s+(\d+ /\d+[A-Z]*)\s+(\d+\.\d{2})\s+(\d+\.\d{2})", line)
-            if match:
-                item = {
-                    "Region": current_region,
-                    "Brand": current_brand,
-                    "Item#": match.group(1),
-                    "Vintage": match.group(2) or "",
-                    "Size": match.group(3),
-                    "Case Price": match.group(4),
-                    "Bottle Price": match.group(5),
-                    "Product Name": "",
-                    "Discounts": ""
-                }
-
-                # Look backward for product name (up to 4 lines)
-                pname = []
-                for back in range(max(0, idx - 4), idx):
-                    pt = lines[back].strip()
-                    if pt and not re.search(r"\d{5}|\d+ /\d+|\d+\.\d{2}|cs", pt):
-                        pname.append(pt)
-                item["Product Name"] = " ".join(pname)
-
-                # Look ahead for discount(s)
-                for fwd in range(idx + 1, min(idx + 6, len(lines))):
-                    ft = lines[fwd].strip()
-                    if re.match(r"\$\d+\.\d{2} on \d+cs", ft):
-                        item["Discounts"] += ft + "; "
-
-                item["Discounts"] = item["Discounts"].strip("; ")
-
-                try:
-                    size_parts = item["Size"].split("/")
-                    item["Bottles per Case"] = size_parts[0].strip()
-                    item["Bottle Size"] = size_parts[1].strip()
-                except:
-                    item["Bottles per Case"] = ""
-                    item["Bottle Size"] = ""
-
-                del item["Size"]
-                item_count += 1
-
-                if not all([item["Region"], item["Brand"], item["Product Name"]]):
-                    missing_data_rows.append(item)
-
-                data.append(item)
-            elif re.match(r"\d{5}", line):
-                failed_parses.append(line)
+    save_entry()
 
     if not data:
-        st.warning("No data found.")
+        st.error("❌ No items extracted. Check PDF formatting or structure.")
     else:
         df = pd.DataFrame(data)
-        st.success(f"Extraction complete! {item_count} items extracted.")
+        st.success(f"✅ Extracted {len(df)} wine entries.")
         st.dataframe(df)
 
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df.to_excel(writer, index=False, sheet_name="WineData")
-            if missing_data_rows:
-                pd.DataFrame(missing_data_rows).to_excel(writer, index=False, sheet_name="Missing Fields")
-            if failed_parses:
-                pd.DataFrame(failed_parses, columns=["Failed Line"]).to_excel(writer, index=False, sheet_name="Failed Matches")
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="Extracted")
             pd.DataFrame(debug_log).to_excel(writer, index=False, sheet_name="Debug Log")
 
         st.download_button(
-            label="Download Excel File",
-            data=output.getvalue(),
-            file_name="royal_wine_data.xlsx",
+            "📥 Download Excel", buffer.getvalue(), "royal_wine_data.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
-        st.subheader("Regions Found")
-        st.write(sorted(list(all_regions)))
-
-        st.subheader("Brands Found")
-        st.write(sorted(list(all_brands)))
-
-        if missing_data_rows:
-            st.warning(f"⚠️ {len(missing_data_rows)} items are missing region, brand, or product name")
-            st.dataframe(pd.DataFrame(missing_data_rows))
-
-        if failed_parses:
-            st.error(f"❌ {len(failed_parses)} lines matched item# but failed to parse fully.")
-            st.dataframe(pd.DataFrame(failed_parses, columns=["Failed Line"]))
