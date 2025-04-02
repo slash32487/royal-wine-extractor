@@ -3,6 +3,7 @@ import fitz  # PyMuPDF
 import pandas as pd
 import re
 from io import BytesIO
+from collections import Counter
 
 st.title("Royal Wine PDF to Excel Extractor")
 
@@ -13,8 +14,15 @@ if uploaded_file:
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 
     data = []
+    debug_log = []
     current_region = None
     current_brand = None
+
+    all_regions = set()
+    all_brands = set()
+    item_count = 0
+    missing_data_rows = []
+    failed_parses = []
 
     for page in doc:
         words = page.get_text("words")  # (x0, y0, x1, y1, word, block_no, line_no, word_no)
@@ -27,18 +35,24 @@ if uploaded_file:
                 continue
             lines.setdefault(y, []).append((w[0], text))
 
-        for y in sorted(lines.keys()):
-            line = " ".join([w[1] for w in sorted(lines[y], key=lambda x: x[0])])
+        sorted_y = sorted(lines.keys())
+        for idx, y in enumerate(sorted_y):
+            line_words = sorted(lines[y], key=lambda x: x[0])
+            line = " ".join([w[1] for w in line_words])
+
+            debug_log.append({"Y": y, "Text": line})
 
             if re.search(r"^\s*Item#", line, re.IGNORECASE):
                 continue
 
             if re.fullmatch(r"[A-Z\s\-&]+", line) and len(line.split()) <= 5:
                 current_region = line.strip()
+                all_regions.add(current_region)
                 continue
 
-            if re.match(r"^[A-Z][a-z]+(?: [A-Z][a-z]+)*$", line) and len(line.split()) <= 4:
+            if re.match(r"^[A-Z][A-Za-z\s\-&]{2,}$", line) and len(line.split()) <= 5:
                 current_brand = line.strip()
+                all_brands.add(current_brand)
                 continue
 
             match = re.match(r"(\d{5})\s+(\d{4}|NV)?\s+(\d+ /\d+[A-Z]*)\s+(\d+\.\d{2})\s+(\d+\.\d{2})", line)
@@ -54,44 +68,71 @@ if uploaded_file:
                     "Product Name": "",
                     "Discounts": ""
                 }
-                # backtrack for product name
-                prior_lines = sorted([k for k in lines if k < y], reverse=True)
+
                 pname = []
-                for py in prior_lines[:3]:
-                    pt = " ".join([w[1] for w in sorted(lines[py], key=lambda x: x[0])])
+                for back_y in sorted_y[max(0, idx - 3):idx][::-1]:
+                    pt = " ".join([w[1] for w in sorted(lines[back_y], key=lambda x: x[0])])
                     if not re.search(r"\d{5}|\d+ /\d+|\d+\.\d{2}|cs", pt):
                         pname.insert(0, pt)
                 item["Product Name"] = " ".join(pname)
 
-                # forward grab discounts
-                forward_lines = sorted([k for k in lines if k > y])
-                for fy in forward_lines[:3]:
+                for fy in sorted_y[idx + 1:idx + 4]:
                     ft = " ".join([w[1] for w in sorted(lines[fy], key=lambda x: x[0])])
                     if re.match(r"\$\d+\.\d{2} on \d+cs", ft):
                         item["Discounts"] += (ft + "; ")
                 item["Discounts"] = item["Discounts"].strip("; ")
 
-                # parse size
-                size_parts = item["Size"].split("/")
-                item["Bottles per Case"] = size_parts[0].strip()
-                item["Bottle Size"] = size_parts[1].strip()
+                try:
+                    size_parts = item["Size"].split("/")
+                    item["Bottles per Case"] = size_parts[0].strip()
+                    item["Bottle Size"] = size_parts[1].strip()
+                except Exception as e:
+                    item["Bottles per Case"] = ""
+                    item["Bottle Size"] = ""
+
                 del item["Size"]
+                item_count += 1
+
+                if not all([item["Region"], item["Brand"], item["Product Name"]]):
+                    missing_data_rows.append(item)
 
                 data.append(item)
+            elif re.match(r"\d{5}", line):
+                failed_parses.append(line)
 
     if not data:
         st.warning("No data found.")
     else:
         df = pd.DataFrame(data)
-        st.success("Extraction complete!")
+        st.success(f"Extraction complete! {item_count} items extracted.")
         st.dataframe(df)
 
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="WineData")
+            if missing_data_rows:
+                pd.DataFrame(missing_data_rows).to_excel(writer, index=False, sheet_name="Missing Fields")
+            if failed_parses:
+                pd.DataFrame(failed_parses, columns=["Failed Line"]).to_excel(writer, index=False, sheet_name="Failed Matches")
+            pd.DataFrame(debug_log).to_excel(writer, index=False, sheet_name="Debug Log")
+
         st.download_button(
             label="Download Excel File",
             data=output.getvalue(),
             file_name="royal_wine_data.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+        st.subheader("Regions Found")
+        st.write(sorted(list(all_regions)))
+
+        st.subheader("Brands Found")
+        st.write(sorted(list(all_brands)))
+
+        if missing_data_rows:
+            st.warning(f"⚠️ {len(missing_data_rows)} items are missing region, brand, or product name")
+            st.dataframe(pd.DataFrame(missing_data_rows))
+
+        if failed_parses:
+            st.error(f"❌ {len(failed_parses)} lines matched item# but failed to parse fully.")
+            st.dataframe(pd.DataFrame(failed_parses, columns=["Failed Line"]))
