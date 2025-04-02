@@ -6,3 +6,4 @@ pillow
 streamlit
 pandas
 openpyxl
+loguru
