@@ -14,6 +14,7 @@ known_regions = {"CALIFORNIA", "FRANCE", "ISRAEL", "ITALY", "SPAIN", "SOUTH AFRI
 known_brands = {"STOUDEMIRE", "WEINSTOCK", "HAGAFEN CELLARS", "PHILIPPE LE HARDI"}
 
 uploaded_file = st.file_uploader("Upload Full Royal Wine PDF", type="pdf")
+debug = st.checkbox("🔍 Enable Debug Preview")
 
 if uploaded_file:
     doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
@@ -96,3 +97,7 @@ if uploaded_file:
             "📥 Download Excel", buffer.getvalue(), "royal_wine_data_first_page.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+    if debug:
+        st.subheader("🔍 Raw Extracted Lines from First Page")
+        st.dataframe(pd.DataFrame(debug_log).head(100))
