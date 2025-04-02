@@ -50,7 +50,7 @@ def extract_items_from_pdf(file):
                 return "vintage"
             if re.fullmatch(r"\d+\s*/\s*\d+", text):
                 return "size"
-            if re.fullmatch(r"\d+\.\d{2}", text):
+            if re.fullmatch(r"\d+\.\d{2}( \d+\.\d{2})?", text):
                 return "price"
             if re.match(r"\$\d+\.\d{2} on \d+cs", text):
                 return "discount"
@@ -83,7 +83,6 @@ def extract_items_from_pdf(file):
                 discounts = []
                 product_name = last_product_name
 
-                # Look ahead for next 5 lines
                 j = i + 1
                 while j < len(sorted_lines):
                     t = sorted_lines[j][1].strip()
