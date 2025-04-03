@@ -25,18 +25,12 @@ def is_item_number(text):
 def is_vintage(text):
     return text in valid_vintages
 
-def is_centered_brand_line(line_words):
-    text = " ".join(w[4] for w in line_words)
-    return text.isupper() and 4 <= len(line_words) <= 6 and all(150 < w[0] < 450 for w in line_words)
-
-def is_region_block(w):
-    return w[3] - w[1] > 20 and w[4].isupper() and w[0] < 200
-
 def extract_pdf_data(pdf_bytes):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     first_page = doc[0]
     words = first_page.get_text("words")
     words.sort(key=lambda w: (round(w[1], 1), w[0]))
+    
     lines_by_y = defaultdict(list)
     for w in words:
         lines_by_y[round(w[1], 1)].append(w)
@@ -44,23 +38,21 @@ def extract_pdf_data(pdf_bytes):
     y_sorted = sorted(lines_by_y.keys())
     data = []
     debug_log = []
-    current_region = None
     current_brand = None
     temp = defaultdict(str)
 
     def save_entry():
-        if temp.get("Item#"):
+        if temp.get("Item#") and temp.get("Product Name"):
             data.append({
-                "Region": current_region,
-                "Brand": current_brand,
                 "Item#": temp["Item#"],
                 "Vintage": temp["Vintage"],
-                "Product Name": temp["Name"].strip(),
+                "Product Name": temp["Product Name"].strip(),
                 "Bottles per Case": temp["BPC"],
                 "Bottle Size": temp["BottleSize"],
                 "Case Price": temp["CasePrice"],
                 "Bottle Price": temp["BottlePrice"],
-                "Discounts": temp["Discounts"].strip("; ")
+                "Discounts": temp["Discounts"].strip('; '),
+                "Brand": current_brand
             })
             temp.clear()
 
@@ -69,11 +61,7 @@ def extract_pdf_data(pdf_bytes):
         line = " ".join(w[4] for w in sorted(line_words, key=lambda x: x[0])).strip()
         debug_log.append({"Y": y, "Line": line})
 
-        if any(is_region_block(w) for w in line_words):
-            current_region = line.strip()
-            continue
-
-        if is_centered_brand_line(line_words):
+        if line.isupper() and 3 <= len(line.split()) <= 6:
             current_brand = line
             continue
 
@@ -103,7 +91,10 @@ def extract_pdf_data(pdf_bytes):
             temp["Discounts"] += line + "; "
             continue
 
-        temp["Name"] += line + " "
+        if temp.get("Product Name"):
+            temp["Product Name"] += " " + line
+        else:
+            temp["Product Name"] = line
 
     save_entry()
     return data, debug_log
