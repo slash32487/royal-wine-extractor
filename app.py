@@ -26,11 +26,13 @@ def extract_from_excel(file):
         row_content = [str(cell).strip() for cell in row if str(cell).strip()]
         debug_log.append({"Row #": idx, "Content": row_content})
 
-        if re_item.fullmatch(str(row[0]).strip()):
+        # Search for item number in any column, not just first
+        item_number = next((str(cell).strip() for cell in row if re_item.fullmatch(str(cell).strip())), None)
+        if item_number:
             if current:
                 items.append(current)
             current = {
-                "Item#": str(row[0]).strip(),
+                "Item#": item_number,
                 "Product Name": "",
                 "Vintage": "",
                 "Bottles per Case": "",
