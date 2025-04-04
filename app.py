@@ -21,8 +21,6 @@ def extract_from_excel(file):
     items = []
     current = {}
     debug_log = []
-    row_counter = 0
-    max_rows_per_item = 4
 
     for idx, row in df_raw.iterrows():
         row_content = [str(cell).strip() for cell in row if str(cell).strip()]
@@ -43,13 +41,10 @@ def extract_from_excel(file):
                 "Bottle Price": "",
                 "Discounts": ""
             }
-            row_counter = 0
             continue
 
-        if not current or row_counter >= max_rows_per_item:
+        if not current:
             continue
-
-        row_counter += 1
 
         for cell in row:
             text = str(cell).strip()
@@ -68,7 +63,7 @@ def extract_from_excel(file):
                     current["Bottle Price"] = text
             elif re_discount.fullmatch(text):
                 current["Discounts"] += text + "; "
-            elif not re_price.fullmatch(text):
+            else:
                 current["Product Name"] += text + " "
 
     if current:
