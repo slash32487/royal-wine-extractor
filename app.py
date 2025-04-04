@@ -1,96 +1,46 @@
 import streamlit as st
 import pandas as pd
-import re
-from io import BytesIO
+from doctr.io import DocumentFile
+from doctr.models import ocr_predictor
 
-st.title("Royal Wine ETS Excel Extractor")
+st.set_page_config(page_title="PDF OCR Extractor with DocTR", layout="wide")
+st.title("📄 PDF OCR Extractor (DocTR)")
 
-# Regex patterns for identifying fields
-re_item = re.compile(r"^\d{5}$")
-re_vintage = re.compile(r"^(199\d|20[0-2]\d|2025)$")
-re_case_size = re.compile(r"^(\d{1,2})\s*/\s*(\d+(?:\.\d+)?(?:L|ML)?)$")
-re_price = re.compile(r"^\d+\.\d{2}$")
-re_discount = re.compile(r"^\$\d+\.\d{2} on \d+cs$")
-
-@st.cache_data
-def extract_from_excel(file):
-    df_raw = pd.read_excel(file, header=None)
-    df_raw.dropna(how='all', inplace=True)
-    df_raw.fillna("", inplace=True)
-
-    items = []
-    current = {}
-    debug_log = []
-
-    for idx, row in df_raw.iterrows():
-        row_content = [str(cell).strip() for cell in row if str(cell).strip()]
-        debug_log.append({"Row #": idx, "Content": row_content})
-
-        # Search for item number in any column
-        item_number = next((str(cell).strip() for cell in row if re_item.fullmatch(str(cell).strip())), None)
-        if item_number:
-            if current:
-                items.append(current)
-            current = {
-                "Item#": item_number,
-                "Product Name": "",
-                "Vintage": "",
-                "Bottles per Case": "",
-                "Bottle Size": "",
-                "Case Price": "",
-                "Bottle Price": "",
-                "Discounts": ""
-            }
-            continue
-
-        if not current:
-            continue
-
-        for cell in row:
-            text = str(cell).strip()
-            if not text:
-                continue
-            if re_vintage.fullmatch(text) and not current["Vintage"]:
-                current["Vintage"] = text
-            elif re_case_size.fullmatch(text) and not current["Bottles per Case"]:
-                m = re_case_size.match(text)
-                current["Bottles per Case"] = m.group(1)
-                current["Bottle Size"] = m.group(2)
-            elif re_price.fullmatch(text):
-                if not current["Case Price"]:
-                    current["Case Price"] = text
-                elif not current["Bottle Price"]:
-                    current["Bottle Price"] = text
-            elif re_discount.fullmatch(text):
-                current["Discounts"] += text + "; "
-            else:
-                current["Product Name"] += text + " "
-
-    if current:
-        items.append(current)
-
-    return pd.DataFrame(items), pd.DataFrame(debug_log)
-
-uploaded_file = st.file_uploader("Upload Royal Excel File (ETS Exported)", type="xlsx")
-show_debug = st.checkbox("Show Debug Log")
+uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
 
 if uploaded_file:
-    try:
-        df, debug_df = extract_from_excel(uploaded_file)
-        if df.empty:
-            st.warning("No data extracted. Please verify the Excel content.")
-        else:
-            st.success(f"Extracted {len(df)} items.")
-            st.dataframe(df)
+    with st.spinner("Processing with DocTR OCR model..."):
+        # Load and parse the PDF
+        doc = DocumentFile.from_pdf(uploaded_file.read())
+        model = ocr_predictor(pretrained=True)
+        result = model(doc)
 
-            buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-                df.to_excel(writer, index=False, sheet_name="Extracted")
-                debug_df.to_excel(writer, index=False, sheet_name="Debug Log")
-            st.download_button("📥 Download Excel", buffer.getvalue(), "ets_export.xlsx")
+        # Parse all blocks of text with coordinates
+        rows = []
+        for page_idx, page in enumerate(result.pages):
+            for block in page.blocks:
+                for line in block.lines:
+                    text = " ".join([word.value for word in line.words])
+                    bbox = line.geometry
+                    rows.append({
+                        "Page": page_idx + 1,
+                        "Text": text,
+                        "X0": round(bbox[0][0], 4),
+                        "Y0": round(bbox[0][1], 4),
+                        "X1": round(bbox[1][0], 4),
+                        "Y1": round(bbox[1][1], 4),
+                    })
 
-            if show_debug:
-                st.subheader("Debug Log (Raw Rows)")
-                st.dataframe(debug_df.head(100))
-    except Exception as e:
-        st.error(f"Extraction error: {e}")
+        df = pd.DataFrame(rows)
+        st.success(f"Extracted {len(df)} text blocks across {len(result.pages)} page(s).")
+        st.dataframe(df.head(100), use_container_width=True)
+
+        # Download button
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download CSV", csv, "ocr_extracted.csv", "text/csv")
+
+        # Debug preview
+        with st.expander("Show Full Table"):
+            st.dataframe(df, use_container_width=True)
+else:
+    st.info("Upload a PDF file to begin.")
