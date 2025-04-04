@@ -1,15 +1,20 @@
-# Royal Wine PDF to Excel Extractor
+# Royal Wine ETS Excel Extractor
 
-This Streamlit app extracts structured data from Royal Wine PDF price lists and converts it to Excel. It identifies regions, brands, product names, item numbers, sizes, pricing, and discounts using layout-based logic (fonts, formatting, etc.).
+This Streamlit app extracts structured product data from Excel sheets generated from ETS for Windows (via Adobe Acrobat Pro export).
 
 ## Features
-- Automatically detects region and brand hierarchy
-- Combines multi-line product names and awards
-- Skips combo/gift packs and irrelevant headers/footers
-- Flags inferred product names when missing
+- Accepts `.xlsx` files exported from Acrobat Pro
+- Identifies:
+  - Product Name
+  - Item#
+  - Vintage (1990–2025)
+  - Bottle Size & Quantity
+  - Case/Bottle Price
+  - Discounts
+- Debug log for raw row preview
+- Export to clean Excel file
 
-## Installation
-Create a virtual environment and install dependencies:
-
+## How to Use
 ```bash
 pip install -r requirements.txt
+streamlit run app.py
