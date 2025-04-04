@@ -1,5 +1,4 @@
 streamlit
 pandas
 python-doctr[torch]
-torch
-torchvision
+opencv-python-headless
