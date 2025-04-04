@@ -4,7 +4,7 @@ import pandas as pd
 import re
 from io import BytesIO
 
-st.title("Royal Wine Extractor - ETS Optimized")
+st.title("Royal Wine ETS PDF Extractor")
 
 # Patterns based on ETS-generated structure
 re_item = re.compile(r"^\d{5}$")
