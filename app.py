@@ -21,12 +21,14 @@ def extract_from_excel(file):
     items = []
     current = {}
     debug_log = []
+    row_counter = 0
+    max_rows_per_item = 4
 
     for idx, row in df_raw.iterrows():
         row_content = [str(cell).strip() for cell in row if str(cell).strip()]
         debug_log.append({"Row #": idx, "Content": row_content})
 
-        # Search for item number in any column, not just first
+        # Search for item number in any column
         item_number = next((str(cell).strip() for cell in row if re_item.fullmatch(str(cell).strip())), None)
         if item_number:
             if current:
@@ -41,18 +43,21 @@ def extract_from_excel(file):
                 "Bottle Price": "",
                 "Discounts": ""
             }
+            row_counter = 0
             continue
 
-        if not current:
+        if not current or row_counter >= max_rows_per_item:
             continue
+
+        row_counter += 1
 
         for cell in row:
             text = str(cell).strip()
             if not text:
                 continue
-            if re_vintage.fullmatch(text):
+            if re_vintage.fullmatch(text) and not current["Vintage"]:
                 current["Vintage"] = text
-            elif re_case_size.fullmatch(text):
+            elif re_case_size.fullmatch(text) and not current["Bottles per Case"]:
                 m = re_case_size.match(text)
                 current["Bottles per Case"] = m.group(1)
                 current["Bottle Size"] = m.group(2)
@@ -63,7 +68,7 @@ def extract_from_excel(file):
                     current["Bottle Price"] = text
             elif re_discount.fullmatch(text):
                 current["Discounts"] += text + "; "
-            else:
+            elif not re_price.fullmatch(text):
                 current["Product Name"] += text + " "
 
     if current:
