@@ -20,8 +20,12 @@ def extract_from_excel(file):
 
     items = []
     current = {}
+    debug_log = []
 
-    for _, row in df_raw.iterrows():
+    for idx, row in df_raw.iterrows():
+        row_content = [str(cell).strip() for cell in row if str(cell).strip()]
+        debug_log.append({"Row #": idx, "Content": row_content})
+
         if re_item.fullmatch(str(row[0]).strip()):
             if current:
                 items.append(current)
@@ -63,13 +67,14 @@ def extract_from_excel(file):
     if current:
         items.append(current)
 
-    return pd.DataFrame(items)
+    return pd.DataFrame(items), pd.DataFrame(debug_log)
 
 uploaded_file = st.file_uploader("Upload Royal Excel File (ETS Exported)", type="xlsx")
+show_debug = st.checkbox("Show Debug Log")
 
 if uploaded_file:
     try:
-        df = extract_from_excel(uploaded_file)
+        df, debug_df = extract_from_excel(uploaded_file)
         if df.empty:
             st.warning("No data extracted. Please verify the Excel content.")
         else:
@@ -79,6 +84,11 @@ if uploaded_file:
             buffer = BytesIO()
             with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
                 df.to_excel(writer, index=False, sheet_name="Extracted")
+                debug_df.to_excel(writer, index=False, sheet_name="Debug Log")
             st.download_button("📥 Download Excel", buffer.getvalue(), "ets_export.xlsx")
+
+            if show_debug:
+                st.subheader("Debug Log (Raw Rows)")
+                st.dataframe(debug_df.head(100))
     except Exception as e:
         st.error(f"Extraction error: {e}")
